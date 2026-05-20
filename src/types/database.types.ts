@@ -53,6 +53,7 @@ export interface Database {
           name: string
           balance: number
           household_id: string
+          user_id: string
           created_at: string | null
         }
         Insert: {
@@ -60,6 +61,7 @@ export interface Database {
           name: string
           balance?: number
           household_id: string
+          user_id: string
           created_at?: string | null
         }
         Update: {
@@ -67,6 +69,65 @@ export interface Database {
           name?: string
           balance?: number
           household_id?: string
+          user_id?: string
+          created_at?: string | null
+        }
+      }
+      debts: {
+        Row: {
+          id: string
+          name: string
+          total_amount: number
+          paid_amount: number
+          household_id: string
+          user_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          total_amount: number
+          paid_amount?: number
+          household_id: string
+          user_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          total_amount?: number
+          paid_amount?: number
+          household_id?: string
+          user_id?: string
+          created_at?: string | null
+        }
+      }
+      debt_payments: {
+        Row: {
+          id: string
+          debt_id: string
+          amount: number
+          bank_account_id: string | null
+          user_id: string
+          date: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          debt_id: string
+          amount: number
+          bank_account_id?: string | null
+          user_id: string
+          date?: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          debt_id?: string
+          amount?: number
+          bank_account_id?: string | null
+          user_id?: string
+          date?: string
           created_at?: string | null
         }
       }

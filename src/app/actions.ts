@@ -42,6 +42,74 @@ export async function addExpenseAction(formData: FormData) {
     throw new Error("Error guardando el gasto")
   }
 
+  // Update bank balance
+  if (bank_account_id) {
+    const { data: bank } = await supabase.from('bank_accounts').select('balance').eq('id', bank_account_id).single()
+    if (bank) {
+      await supabase.from('bank_accounts').update({ balance: bank.balance - amount }).eq('id', bank_account_id)
+    }
+  }
+
+  revalidatePath('/', 'page')
+  return { success: true }
+}
+
+export async function addDebtAction(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("No autorizado")
+
+  const name = formData.get('name') as string
+  const total_amount = parseFloat(formData.get('total_amount') as string)
+
+  const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single()
+  if (!member) throw new Error("No perteneces a un household")
+
+  const { error } = await supabase.from('debts').insert({
+    name,
+    total_amount,
+    household_id: member.household_id,
+    user_id: user.id
+  })
+
+  if (error) throw new Error("Error guardando la deuda")
+  revalidatePath('/', 'page')
+  return { success: true }
+}
+
+export async function payDebtAction(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("No autorizado")
+
+  const debt_id = formData.get('debt_id') as string
+  const amount = parseFloat(formData.get('amount') as string)
+  const bank_account_id = formData.get('bank_account_id') as string
+
+  // 1. Insert Payment
+  const { error } = await supabase.from('debt_payments').insert({
+    debt_id,
+    amount,
+    bank_account_id: bank_account_id || null,
+    user_id: user.id
+  })
+
+  if (error) throw new Error("Error procesando pago")
+
+  // 2. Update Debt paid_amount
+  const { data: debt } = await supabase.from('debts').select('paid_amount').eq('id', debt_id).single()
+  if (debt) {
+    await supabase.from('debts').update({ paid_amount: debt.paid_amount + amount }).eq('id', debt_id)
+  }
+
+  // 3. Update Bank Balance
+  if (bank_account_id) {
+    const { data: bank } = await supabase.from('bank_accounts').select('balance').eq('id', bank_account_id).single()
+    if (bank) {
+      await supabase.from('bank_accounts').update({ balance: bank.balance - amount }).eq('id', bank_account_id)
+    }
+  }
+
   revalidatePath('/', 'page')
   return { success: true }
 }
