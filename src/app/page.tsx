@@ -1,45 +1,41 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
-  Wallet, 
-  CreditCard, 
-  TrendingUp, 
-  ArrowRightLeft,
-  ShoppingBag,
-  Coffee,
-  Home as HomeIcon,
-  Plus,
-  PiggyBank,
-  LogOut,
-  Target
+  Wallet, CreditCard, TrendingUp, ArrowRightLeft,
+  ShoppingBag, Coffee, Home as HomeIcon, Plus,
+  PiggyBank, LogOut, Target, X
 } from 'lucide-react';
 import { logout } from './login/actions';
+import { addExpenseAction } from './actions';
 
 export default function Dashboard() {
-  // Mock Data for Expenses
-  const stats = {
-    totalMonth: 124500,
-    personal: 45000,
-    shared: 79500
-  };
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const balance = {
-    owedToYou: 15000,
-    whoOwes: "Tu Pareja" 
-  };
-
+  // Mock Data for UI (This would be fetched from Supabase in a real scenario)
+  const stats = { totalMonth: 124500, personal: 45000, shared: 79500 };
+  const balance = { owedToYou: 15000, whoOwes: "Tu Pareja" };
   const recentTransactions = [
     { id: 1, desc: 'Supermercado', amount: 45000, category: 'Comida', type: 'Compartido', date: 'Hoy', icon: ShoppingBag },
     { id: 2, desc: 'Internet', amount: 25000, category: 'Hogar', type: 'Compartido', date: 'Ayer', icon: HomeIcon },
-    { id: 3, desc: 'Café', amount: 3500, category: 'Personal', type: 'Personal', date: 'Ayer', icon: Coffee },
   ];
-
-  // Mock Data for Savings
   const savingsGoals = [
     { id: 1, name: 'Viaje a Japón', target: 5000000, current: 1200000 },
-    { id: 2, name: 'Fondo de Emergencia', target: 1000000, current: 850000 },
   ];
+  const bankAccounts = [
+    { id: '1', name: 'Cuenta Corriente', balance: 500000 },
+    { id: '2', name: 'Tarjeta Crédito', balance: -150000 },
+  ];
+
+  async function handleAddExpense(formData: FormData) {
+    try {
+      await addExpenseAction(formData);
+      setIsModalOpen(false);
+      alert('Gasto agregado exitosamente (recarga la página para ver los cambios si estuviera conectado a DB real)');
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
 
   return (
     <main className="min-h-screen p-6 md:p-12 lg:px-24">
@@ -51,7 +47,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-4">
           <form action={logout}>
-            <button className="h-10 w-10 rounded-full glass-panel flex items-center justify-center text-zinc-400 hover:text-white transition-colors" title="Cerrar sesión">
+            <button className="h-10 w-10 rounded-full glass-panel flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
               <LogOut size={18} />
             </button>
           </form>
@@ -90,73 +86,19 @@ export default function Dashboard() {
             </div>
           </section>
 
-          {/* Savings Section (NEW) */}
-          <section className="glass-panel p-6 bg-gradient-to-br from-blue-950/20 to-indigo-950/20 border-blue-500/20">
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center gap-2 text-blue-400">
-                <PiggyBank size={20} />
-                <h3 className="font-semibold">Metas de Ahorro</h3>
-              </div>
-              <button className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1">
-                <Plus size={14} /> Nueva Meta
-              </button>
-            </div>
-            
-            <div className="space-y-5">
-              {savingsGoals.map((goal) => {
-                const progress = Math.min((goal.current / goal.target) * 100, 100);
-                return (
-                  <div key={goal.id} className="relative">
-                    <div className="flex justify-between items-end mb-2">
-                      <div>
-                        <p className="font-medium text-white flex items-center gap-2">
-                          <Target size={14} className="text-blue-400" />
-                          {goal.name}
-                        </p>
-                        <p className="text-xs text-zinc-400 mt-1">
-                          ${goal.current.toLocaleString()} de ${goal.target.toLocaleString()}
-                        </p>
-                      </div>
-                      <p className="text-sm font-semibold text-blue-400">{progress.toFixed(0)}%</p>
-                    </div>
-                    {/* Progress Bar */}
-                    <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-400 rounded-full"
-                        style={{ width: `${progress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-
-          {/* Recent Transactions */}
+          {/* Bank Accounts Section (NEW) */}
           <section className="glass-panel p-6">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-semibold">Gastos Recientes</h3>
-              <button className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1">
-                Ver todos <ArrowRightLeft size={14} />
-              </button>
+              <h3 className="text-lg font-semibold flex items-center gap-2"><CreditCard size={18} className="text-indigo-400"/> Cuentas Bancarias</h3>
+              <button className="text-sm text-indigo-400 hover:text-indigo-300">Añadir</button>
             </div>
-            
-            <div className="space-y-4">
-              {recentTransactions.map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500/20 group-hover:scale-110 transition-all">
-                      <tx.icon size={18} />
-                    </div>
-                    <div>
-                      <p className="font-medium text-white">{tx.desc}</p>
-                      <p className="text-xs text-zinc-500">{tx.category} • {tx.date}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-white">-${tx.amount.toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">{tx.type}</p>
-                  </div>
+            <div className="grid grid-cols-2 gap-4">
+              {bankAccounts.map(b => (
+                <div key={b.id} className="p-4 rounded-xl bg-white/5 border border-white/5">
+                  <p className="text-zinc-400 text-sm">{b.name}</p>
+                  <p className={`text-lg font-semibold ${b.balance < 0 ? 'text-red-400' : 'text-white'}`}>
+                    ${b.balance.toLocaleString()}
+                  </p>
                 </div>
               ))}
             </div>
@@ -164,34 +106,12 @@ export default function Dashboard() {
 
         </div>
 
-        {/* Sidebar / Balance */}
+        {/* Sidebar / Quick Actions */}
         <div className="space-y-6">
-          
-          {/* Balance Card */}
-          <section className="glass-panel p-6 bg-gradient-to-br from-indigo-950/40 to-purple-950/40 border-indigo-500/20">
-            <div className="flex items-center gap-2 text-purple-400 mb-6">
-              <TrendingUp size={20} />
-              <h3 className="font-medium">Balance de Pareja</h3>
-            </div>
-            
-            <div className="text-center py-6">
-              <p className="text-sm text-zinc-400 mb-2">{balance.whoOwes} te debe</p>
-              <div className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
-                ${balance.owedToYou.toLocaleString()}
-              </div>
-            </div>
-            
-            <button className="w-full mt-4 bg-white/10 hover:bg-white/20 text-white rounded-xl py-3 text-sm font-medium transition-all flex items-center justify-center gap-2">
-              <CreditCard size={16} />
-              Saldar Deuda
-            </button>
-          </section>
-
-          {/* Quick Actions */}
           <section className="glass-panel p-6">
             <h3 className="text-lg font-semibold mb-4">Acciones Rápidas</h3>
             <div className="grid grid-cols-2 gap-3">
-              <button className="flex flex-col items-center justify-center gap-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 p-4 rounded-xl transition-colors border border-indigo-500/20">
+              <button onClick={() => setIsModalOpen(true)} className="flex flex-col items-center justify-center gap-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 p-4 rounded-xl transition-colors border border-indigo-500/20">
                 <Plus size={24} />
                 <span className="text-xs font-medium text-center">Nuevo Gasto</span>
               </button>
@@ -200,14 +120,65 @@ export default function Dashboard() {
                 <span className="text-xs font-medium text-center">Ahorrar</span>
               </button>
             </div>
-            
-            <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/5 text-sm text-zinc-400 text-center">
-              💡 Tip: Envía <strong className="text-white">"50000 Ahorro Viaje Ahorros Compartido"</strong> al bot de Telegram.
-            </div>
           </section>
-
         </div>
       </div>
+
+      {/* MODAL NUEVO GASTO */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-md p-6 relative animate-in fade-in zoom-in duration-200">
+            <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-white">
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Plus size={20} className="text-indigo-400"/> Registrar Gasto</h2>
+            
+            <form action={handleAddExpense} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Monto ($)</label>
+                  <input name="amount" type="number" required className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-indigo-500" placeholder="15000" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Categoría</label>
+                  <select name="category" required className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-indigo-500">
+                    <option value="Comida">Comida</option>
+                    <option value="Hogar">Hogar</option>
+                    <option value="Transporte">Transporte</option>
+                    <option value="Ocio">Ocio</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Descripción</label>
+                <input name="description" type="text" required className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-indigo-500" placeholder="Supermercado" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Cuenta Bancaria</label>
+                  <select name="bank_account_id" className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-indigo-500">
+                    {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Tipo de Gasto</label>
+                  <select name="split_type" required className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-indigo-500">
+                    <option value="50/50">Compartido (50/50)</option>
+                    <option value="100%_personal">100% Personal</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3 font-medium transition-colors mt-6">
+                Guardar Gasto
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }

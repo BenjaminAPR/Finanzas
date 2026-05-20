@@ -1,117 +1,145 @@
 import { NextResponse } from 'next/server';
-import { Telegraf } from 'telegraf';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { Telegraf, Markup } from 'telegraf';
+import { createClient } from '@supabase/supabase-js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
-if (!BOT_TOKEN) {
-  console.warn('TELEGRAM_BOT_TOKEN missing in environment variables.');
-}
-
 const bot = new Telegraf(BOT_TOKEN || 'dummy_token');
 
-// Whitelist de Usuarios Permitidos
-const allowedIdsStr = process.env.ALLOWED_TELEGRAM_IDS || '';
-const allowedIds = allowedIdsStr.split(',').map(id => id.trim());
+// Utility to get Supabase Admin client
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  return createClient(supabaseUrl, supabaseServiceKey);
+}
 
-bot.use((ctx, next) => {
-  if (ctx.from) {
-    const telegramId = ctx.from.id.toString();
-    if (allowedIds.length > 0 && allowedIds[0] !== '' && !allowedIds.includes(telegramId)) {
-      console.log(`Mensaje bloqueado del usuario no autorizado: ${telegramId}`);
-      return; 
-    }
-  }
-  return next();
-});
-
-bot.start((ctx) => {
-  ctx.reply(`¡Hola! Soy el bot de Finanzas en Pareja.\n\nEnvíame tus gastos o ahorros en este formato:\n\n*[Monto] [Descripción] [Categoría] [Personal/Compartido]*\nEjemplo: 15000 Supermercado Comida Compartido\n\nTu Telegram ID es: ${ctx.from.id}. Asegúrate de que esté configurado en la base de datos (campo phone_number).`);
-});
-
+// 1. Recibir texto (Monto y Descripción)
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
-  
-  // Expresión regular para parsear el gasto
-  const regex = /^(\d+(?:\.\d+)?)\s+(.*?)\s+(\S+)\s+(Personal|Compartido)$/i;
-  const match = text.match(regex);
+  const phone_number = ctx.from.id.toString();
+  const supabase = getSupabase();
 
+  // Buscar usuario
+  const { data: user } = await supabase.from('users').select('id').eq('phone_number', phone_number).single();
+  if (!user) return ctx.reply('❌ No estás registrado en el sistema.');
+
+  // Extraer Monto y Descripción
+  const match = text.match(/^(\d+(?:\.\d+)?)\s+(.+)$/i);
   if (!match) {
-    return ctx.reply('❌ Formato incorrecto. Usa:\n\n[Monto] [Descripción] [Categoría] [Personal/Compartido]\n\nEjemplo: 15000 Supermercado Comida Compartido');
+    return ctx.reply('❌ Para registrar un gasto envía el monto y descripción.\nEjemplo: 15000 Supermercado');
   }
 
   const amount = parseFloat(match[1]);
   const description = match[2];
-  const category = match[3];
-  const typeStr = match[4].toLowerCase();
-  
-  const split_type = typeStr === 'personal' ? '100%_personal' : '50/50';
-  const phone_number = ctx.from.id.toString();
 
-  try {
-    // Inicializar Supabase Service Role (Para saltar RLS desde el servidor sin sesión de usuario activa)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  // Guardar como Gasto Pendiente
+  const { data: pending, error } = await supabase
+    .from('pending_bot_expenses')
+    .insert({ user_id: user.id, amount, description, step: 'category' })
+    .select('id')
+    .single();
+
+  if (error || !pending) return ctx.reply('⚠️ Error iniciando el registro.');
+
+  // Mostrar Botones de Categoría
+  const buttons = [
+    Markup.button.callback('🍔 Comida', `cat_${pending.id}_Comida`),
+    Markup.button.callback('🏠 Hogar', `cat_${pending.id}_Hogar`),
+    Markup.button.callback('🚗 Transporte', `cat_${pending.id}_Transporte`),
+    Markup.button.callback('🎉 Ocio', `cat_${pending.id}_Ocio`),
+  ];
+
+  ctx.reply('Selecciona la Categoría:', Markup.inlineKeyboard(buttons, { columns: 2 }));
+});
+
+// 2. Manejar Botones (Callbacks)
+bot.on('callback_query', async (ctx) => {
+  // @ts-ignore
+  const data = ctx.callbackQuery.data;
+  if (!data) return;
+
+  const phone_number = ctx.from?.id.toString();
+  const supabase = getSupabase();
+  const { data: user } = await supabase.from('users').select('id').eq('phone_number', phone_number).single();
+  if (!user) return;
+
+  const parts = data.split('_');
+  const action = parts[0];
+  const pendingId = parts[1];
+  const value = parts.slice(2).join('_');
+
+  // Recuperar el gasto pendiente
+  const { data: pending } = await supabase.from('pending_bot_expenses').select('*').eq('id', pendingId).single();
+  if (!pending) return ctx.answerCbQuery('⚠️ Este registro ya expiró o fue completado.');
+
+  if (action === 'cat') {
+    // Guardar categoría y preguntar Tipo
+    await supabase.from('pending_bot_expenses').update({ category: value, step: 'split' }).eq('id', pendingId);
     
-    // Aquí usamos el Service Role porque el webhook no viene con una cookie de autenticación de usuario
-    // Necesitamos privilegios para buscar y escribir.
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const buttons = [
+      Markup.button.callback('👫 Compartido (50/50)', `split_${pendingId}_50/50`),
+      Markup.button.callback('👤 100% Personal', `split_${pendingId}_100%_personal`),
+    ];
+    
+    ctx.editMessageText(`Categoría: ${value}\n\n¿Qué tipo de gasto es?`, Markup.inlineKeyboard(buttons, { columns: 1 }));
+    ctx.answerCbQuery();
+  } 
+  
+  else if (action === 'split') {
+    // Guardar Tipo y preguntar Banco
+    await supabase.from('pending_bot_expenses').update({ split_type: value, step: 'bank' }).eq('id', pendingId);
 
-    // 1. Buscar al usuario
-    const { data: user, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .eq('phone_number', phone_number)
-      .single();
+    // Buscar el Household del usuario para listar sus bancos
+    const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single();
+    if (!member) return ctx.answerCbQuery('Error: Sin grupo familiar.');
 
-    if (userError || !user) {
-      return ctx.reply(`❌ Usuario no encontrado.\nAsegúrate de que tu ID de Telegram (${phone_number}) esté guardado en el campo "phone_number" de tu base de datos.`);
+    const { data: banks } = await supabase.from('bank_accounts').select('id, name').eq('household_id', member.household_id);
+    
+    if (!banks || banks.length === 0) {
+      ctx.editMessageText('⚠️ No hay Cuentas Bancarias configuradas en la App. Crea una primero.');
+      return ctx.answerCbQuery();
     }
 
-    const userId = user.id;
+    const buttons = banks.map(b => Markup.button.callback(`🏦 ${b.name}`, `bank_${pendingId}_${b.id}`));
+    ctx.editMessageText(`Tipo: ${value === '50/50' ? 'Compartido' : 'Personal'}\n\n¿De qué cuenta se pagó?`, Markup.inlineKeyboard(buttons, { columns: 1 }));
+    ctx.answerCbQuery();
+  }
 
-    // 2. Buscar el household
-    const { data: member, error: memberError } = await supabaseAdmin
-      .from('household_members')
-      .select('household_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .single();
+  else if (action === 'bank') {
+    // Finalizar el gasto
+    const bankId = value;
 
-    if (memberError || !member) {
-      return ctx.reply('❌ No estás vinculado a ningún Grupo Familiar (Household).');
-    }
-
-    const householdId = member.household_id;
-
-    // 3. Insertar Gasto
-    const { error: insertError } = await supabaseAdmin
-      .from('expenses')
-      .insert({
-        amount,
-        description,
-        category: category || 'General',
-        split_type,
-        paid_by: userId,
-        household_id: householdId,
+    // Obtener el household
+    const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single();
+    
+    if (member) {
+      // Insertar en Gastos reales
+      const { error: insertError } = await supabase.from('expenses').insert({
+        amount: pending.amount,
+        description: pending.description,
+        category: pending.category,
+        split_type: pending.split_type,
+        paid_by: user.id,
+        household_id: member.household_id,
+        bank_account_id: bankId
       });
 
-    if (insertError) {
-      console.error('Insert error', insertError);
-      return ctx.reply('⚠️ Hubo un problema al guardar el registro en la base de datos.');
+      if (!insertError) {
+        // Actualizar balance de la cuenta
+        await supabase.rpc('decrement_bank_balance', { bank_id: bankId, deduct_amount: pending.amount });
+        // (Nota: asume que crearás la función RPC, pero sin ella igual se guarda el gasto)
+
+        // Borrar el pendiente
+        await supabase.from('pending_bot_expenses').delete().eq('id', pendingId);
+
+        ctx.editMessageText(`✅ *Gasto Registrado con Éxito*\n💰 Monto: $${pending.amount}\n📝 Desc: ${pending.description}\n📊 Categoría: ${pending.category}\n🔄 Tipo: ${pending.split_type === '50/50' ? 'Compartido' : 'Personal'}\n🏦 Banco ID: ${bankId}`);
+      } else {
+        ctx.editMessageText('❌ Hubo un error al guardar el gasto final.');
+      }
     }
-
-    ctx.reply(`✅ *Registro exitoso*\n💰 Monto: $${amount}\n📝 Desc: ${description}\n📊 Categoría: ${category}\n🔄 Tipo: ${split_type}`);
-
-  } catch (error: any) {
-    console.error('Error procesando el webhook:', error);
-    ctx.reply('❌ Error interno procesando la solicitud.');
+    ctx.answerCbQuery();
   }
 });
 
-// El handler HTTP POST para el Webhook de Telegram
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -121,9 +149,4 @@ export async function POST(req: Request) {
     console.error('Webhook error:', error);
     return NextResponse.json({ ok: false, error: 'Internal Server Error' }, { status: 500 });
   }
-}
-
-// Opcional: handler GET para chequear salud de la API
-export async function GET() {
-  return NextResponse.json({ ok: true, status: 'Bot Webhook is ready' });
 }
