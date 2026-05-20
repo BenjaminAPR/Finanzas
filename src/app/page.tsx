@@ -9,8 +9,21 @@ import {
 import { logout } from './login/actions';
 import { addExpenseAction } from './actions';
 
+import { createClient } from '@/utils/supabase/client';
+
 export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+
+  // Fetch real bank accounts on load
+  React.useEffect(() => {
+    async function loadBanks() {
+      const supabase = createClient();
+      const { data } = await supabase.from('bank_accounts').select('*');
+      if (data) setBankAccounts(data);
+    }
+    loadBanks();
+  }, []);
 
   // Mock Data for UI (This would be fetched from Supabase in a real scenario)
   const stats = { totalMonth: 124500, personal: 45000, shared: 79500 };
@@ -21,10 +34,6 @@ export default function Dashboard() {
   ];
   const savingsGoals = [
     { id: 1, name: 'Viaje a Japón', target: 5000000, current: 1200000 },
-  ];
-  const bankAccounts = [
-    { id: '1', name: 'Cuenta Corriente', balance: 500000 },
-    { id: '2', name: 'Tarjeta Crédito', balance: -150000 },
   ];
 
   async function handleAddExpense(formData: FormData) {
