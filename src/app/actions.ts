@@ -113,3 +113,26 @@ export async function payDebtAction(formData: FormData) {
   revalidatePath('/', 'page')
   return { success: true }
 }
+
+export async function createBankAccountAction(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error("No autorizado")
+
+  const name = formData.get('name') as string
+  const balance = parseFloat(formData.get('balance') as string)
+
+  const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single()
+  if (!member) throw new Error("No perteneces a un household")
+
+  const { error } = await supabase.from('bank_accounts').insert({
+    name,
+    balance,
+    household_id: member.household_id,
+    user_id: user.id
+  })
+
+  if (error) throw new Error("Error creando cuenta bancaria")
+  revalidatePath('/', 'page')
+  return { success: true }
+}
