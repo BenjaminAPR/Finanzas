@@ -7,7 +7,7 @@ export async function addExpenseAction(formData: FormData) {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error("No autorizado")
+  if (!user) return { error: "No autorizado" }
 
   const amount = parseFloat(formData.get('amount') as string)
   const description = formData.get('description') as string
@@ -16,13 +16,13 @@ export async function addExpenseAction(formData: FormData) {
   const bank_account_id = formData.get('bank_account_id') as string
 
   // Get user's household
-  const { data: member } = await supabase
+  const { data: member, error: memberErr } = await supabase
     .from('household_members')
     .select('household_id')
     .eq('user_id', user.id)
     .single()
 
-  if (!member) throw new Error("No perteneces a un household")
+  if (memberErr || !member) return { error: "No perteneces a un household. Asegúrate de configurar tu familia." }
 
   // Insert Expense
   const { error } = await supabase
@@ -39,7 +39,7 @@ export async function addExpenseAction(formData: FormData) {
 
   if (error) {
     console.error(error)
-    throw new Error("Error guardando el gasto")
+    return { error: `Error guardando el gasto: ${error.message}` }
   }
 
   // Update bank balance
@@ -57,13 +57,13 @@ export async function addExpenseAction(formData: FormData) {
 export async function addDebtAction(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error("No autorizado")
+  if (!user) return { error: "No autorizado" }
 
   const name = formData.get('name') as string
   const total_amount = parseFloat(formData.get('total_amount') as string)
 
-  const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single()
-  if (!member) throw new Error("No perteneces a un household")
+  const { data: member, error: memberErr } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single()
+  if (memberErr || !member) return { error: "No perteneces a un household" }
 
   const { error } = await supabase.from('debts').insert({
     name,
@@ -72,7 +72,7 @@ export async function addDebtAction(formData: FormData) {
     user_id: user.id
   })
 
-  if (error) throw new Error("Error guardando la deuda")
+  if (error) return { error: `Error guardando la deuda: ${error.message}` }
   revalidatePath('/', 'page')
   return { success: true }
 }
@@ -80,7 +80,7 @@ export async function addDebtAction(formData: FormData) {
 export async function payDebtAction(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error("No autorizado")
+  if (!user) return { error: "No autorizado" }
 
   const debt_id = formData.get('debt_id') as string
   const amount = parseFloat(formData.get('amount') as string)
@@ -94,7 +94,7 @@ export async function payDebtAction(formData: FormData) {
     user_id: user.id
   })
 
-  if (error) throw new Error("Error procesando pago")
+  if (error) return { error: `Error procesando pago: ${error.message}` }
 
   // 2. Update Debt paid_amount
   const { data: debt } = await supabase.from('debts').select('paid_amount').eq('id', debt_id).single()
@@ -117,13 +117,13 @@ export async function payDebtAction(formData: FormData) {
 export async function createBankAccountAction(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error("No autorizado")
+  if (!user) return { error: "No autorizado" }
 
   const name = formData.get('name') as string
   const balance = parseFloat(formData.get('balance') as string)
 
-  const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single()
-  if (!member) throw new Error("No perteneces a un household")
+  const { data: member, error: memberErr } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single()
+  if (memberErr || !member) return { error: "No perteneces a un household" }
 
   const { error } = await supabase.from('bank_accounts').insert({
     name,
@@ -134,7 +134,7 @@ export async function createBankAccountAction(formData: FormData) {
 
   if (error) {
     console.error(error);
-    throw new Error(`Supabase Error: ${error.message} (Code: ${error.code})`)
+    return { error: `Supabase Error: ${error.message} (Code: ${error.code})` }
   }
   revalidatePath('/', 'page')
   return { success: true }
