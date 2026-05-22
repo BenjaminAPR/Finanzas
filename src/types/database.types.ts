@@ -21,6 +21,12 @@ export interface Database {
           household_id: string
           bank_account_id: string | null
           created_at: string | null
+          budget_id: string | null
+          is_installment: boolean | null
+          installment_current: number | null
+          installment_total: number | null
+          parent_expense_id: string | null
+          debt_id: string | null
         }
         Insert: {
           id?: string
@@ -33,6 +39,12 @@ export interface Database {
           household_id: string
           bank_account_id?: string | null
           created_at?: string | null
+          budget_id?: string | null
+          is_installment?: boolean | null
+          installment_current?: number | null
+          installment_total?: number | null
+          parent_expense_id?: string | null
+          debt_id?: string | null
         }
         Update: {
           id?: string
@@ -45,6 +57,12 @@ export interface Database {
           household_id?: string
           bank_account_id?: string | null
           created_at?: string | null
+          budget_id?: string | null
+          is_installment?: boolean | null
+          installment_current?: number | null
+          installment_total?: number | null
+          parent_expense_id?: string | null
+          debt_id?: string | null
         }
       }
       bank_accounts: {
@@ -264,6 +282,70 @@ export interface Database {
           amount?: number
           user_id?: string
           date?: string
+        }
+      }
+      incomes: {
+        Row: {
+          id: string
+          amount: number
+          description: string
+          date: string
+          bank_account_id: string | null
+          household_id: string
+          user_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          amount: number
+          description: string
+          date?: string
+          bank_account_id?: string | null
+          household_id: string
+          user_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          amount?: number
+          description?: string
+          date?: string
+          bank_account_id?: string | null
+          household_id?: string
+          user_id?: string
+          created_at?: string | null
+        }
+      }
+      budgets: {
+        Row: {
+          id: string
+          category: string
+          allocated_amount: number
+          spent_amount: number
+          month: number
+          year: number
+          household_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          category: string
+          allocated_amount: number
+          spent_amount?: number
+          month: number
+          year: number
+          household_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          category?: string
+          allocated_amount?: number
+          spent_amount?: number
+          month?: number
+          year?: number
+          household_id?: string
+          created_at?: string | null
         }
       }
     }

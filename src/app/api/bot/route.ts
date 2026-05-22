@@ -42,10 +42,20 @@ bot.on('text', async (ctx) => {
 
   // Mostrar Botones de Categoría
   const buttons = [
-    Markup.button.callback('🍔 Comida', `cat_${pending.id}_Comida`),
-    Markup.button.callback('🏠 Hogar', `cat_${pending.id}_Hogar`),
+    Markup.button.callback('🏠 Arriendo', `cat_${pending.id}_Arriendo`),
+    Markup.button.callback('💡 Luz', `cat_${pending.id}_Luz`),
+    Markup.button.callback('🔥 Agua cal.', `cat_${pending.id}_Agua caliente`),
+    Markup.button.callback('💧 Agua Fría', `cat_${pending.id}_Agua Fria`),
+    Markup.button.callback('🌐 Internet', `cat_${pending.id}_Internet`),
+    Markup.button.callback('☁️ ICloud', `cat_${pending.id}_ICloud`),
+    Markup.button.callback('📱 Plan móvil', `cat_${pending.id}_Plan móvil`),
+    Markup.button.callback('⛪ Diezmo', `cat_${pending.id}_Diezmo`),
+    Markup.button.callback('🥖 Ayuno', `cat_${pending.id}_Ayuno`),
+    Markup.button.callback('🛒 Supermerc.', `cat_${pending.id}_Supermercado`),
     Markup.button.callback('🚗 Transporte', `cat_${pending.id}_Transporte`),
-    Markup.button.callback('🎉 Ocio', `cat_${pending.id}_Ocio`),
+    Markup.button.callback('👤 Gastos ind.', `cat_${pending.id}_Gastos individuales`),
+    Markup.button.callback('❤️ Citas', `cat_${pending.id}_Citas`),
+    Markup.button.callback('🎂 Cumpleaños', `cat_${pending.id}_Cumpleaños`),
   ];
 
   ctx.reply('Selecciona la Categoría:', Markup.inlineKeyboard(buttons, { columns: 2 }));
@@ -112,6 +122,19 @@ bot.on('callback_query', async (ctx) => {
     const { data: member } = await supabase.from('household_members').select('household_id').eq('user_id', user.id).single();
     
     if (member) {
+      // Find budget
+      const month = new Date().getMonth() + 1;
+      const year = new Date().getFullYear();
+      const { data: budget } = await supabase.from('budgets')
+        .select('id, spent_amount')
+        .eq('category', pending.category)
+        .eq('month', month)
+        .eq('year', year)
+        .eq('household_id', member.household_id)
+        .single();
+        
+      const budgetId = budget ? budget.id : null;
+
       // Insertar en Gastos reales
       const { error: insertError } = await supabase.from('expenses').insert({
         amount: pending.amount,
@@ -120,18 +143,26 @@ bot.on('callback_query', async (ctx) => {
         split_type: pending.split_type,
         paid_by: user.id,
         household_id: member.household_id,
-        bank_account_id: bankId
+        bank_account_id: bankId,
+        budget_id: budgetId
       });
 
       if (!insertError) {
         // Actualizar balance de la cuenta
-        await supabase.rpc('decrement_bank_balance', { bank_id: bankId, deduct_amount: pending.amount });
-        // (Nota: asume que crearás la función RPC, pero sin ella igual se guarda el gasto)
+        const { data: bank } = await supabase.from('bank_accounts').select('balance').eq('id', bankId).single();
+        if (bank) {
+          await supabase.from('bank_accounts').update({ balance: bank.balance - pending.amount }).eq('id', bankId);
+        }
+
+        // Actualizar presupuesto
+        if (budgetId) {
+          await supabase.from('budgets').update({ spent_amount: Number(budget.spent_amount) + pending.amount }).eq('id', budgetId);
+        }
 
         // Borrar el pendiente
         await supabase.from('pending_bot_expenses').delete().eq('id', pendingId);
 
-        ctx.editMessageText(`✅ *Gasto Registrado con Éxito*\n💰 Monto: $${pending.amount}\n📝 Desc: ${pending.description}\n📊 Categoría: ${pending.category}\n🔄 Tipo: ${pending.split_type === '50/50' ? 'Compartido' : 'Personal'}\n🏦 Banco ID: ${bankId}`);
+        ctx.editMessageText(`✅ *Gasto Registrado con Éxito*\n💰 Monto: $${pending.amount}\n📝 Desc: ${pending.description}\n📊 Categoría: ${pending.category}\n🔄 Tipo: ${pending.split_type === '50/50' ? 'Compartido' : 'Personal'}`);
       } else {
         ctx.editMessageText('❌ Hubo un error al guardar el gasto final.');
       }

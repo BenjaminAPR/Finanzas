@@ -6,25 +6,35 @@ import {
   ShoppingBag, Home as HomeIcon, Plus,
   PiggyBank, LogOut, Landmark, X, Percent,
   Users, Settings, Car, Coffee, Receipt,
-  TrendingDown
+  TrendingDown, TrendingUp, PieChart, LayoutDashboard
 } from 'lucide-react';
 import { logout } from './login/actions';
-import { addExpenseAction, addDebtAction, payDebtAction, createBankAccountAction } from './actions';
+import { addExpenseAction, addDebtAction, payDebtAction, createBankAccountAction, addIncomeAction, createBudgetAction } from './actions';
 import { createClient } from '@/utils/supabase/client';
 
+const CATEGORIES = [
+  'Arriendo', 'Luz', 'Agua caliente', 'Agua Fria', 'Internet', 'ICloud', 
+  'Plan móvil', 'Diezmo', 'Ayuno', 'Supermercado', 'Transporte', 
+  'Gastos individuales', 'Citas', 'Cumpleaños'
+];
+
 export default function WalletDashboard() {
-  const [activeTab, setActiveTab] = useState<'billetera' | 'deudas' | 'ahorros' | 'ajustes'>('billetera');
+  const [activeTab, setActiveTab] = useState<'general' | 'presupuestos' | 'movimientos' | 'deudas' | 'ajustes'>('general');
   
   // Modals state
   const [expenseModal, setExpenseModal] = useState(false);
+  const [incomeModal, setIncomeModal] = useState(false);
   const [debtModal, setDebtModal] = useState(false);
-  const [payDebtModal, setPayDebtModal] = useState<string | null>(null); // holds debt_id
+  const [payDebtModal, setPayDebtModal] = useState<string | null>(null);
   const [bankModal, setBankModal] = useState(false);
+  const [budgetModal, setBudgetModal] = useState(false);
 
   // Data state
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [debts, setDebts] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [incomes, setIncomes] = useState<any[]>([]);
+  const [budgets, setBudgets] = useState<any[]>([]);
   const [householdMembers, setHouseholdMembers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
@@ -43,7 +53,14 @@ export default function WalletDashboard() {
       const { data: exp } = await supabase.from('expenses').select('*').order('created_at', { ascending: false }).limit(20);
       if (exp) setExpenses(exp);
 
-      // Fetch household members to show in settings
+      const { data: inc } = await supabase.from('incomes').select('*').order('created_at', { ascending: false }).limit(20);
+      if (inc) setIncomes(inc);
+
+      const month = new Date().getMonth() + 1;
+      const year = new Date().getFullYear();
+      const { data: bdgs } = await supabase.from('budgets').select('*').eq('month', month).eq('year', year);
+      if (bdgs) setBudgets(bdgs);
+
       const { data: memberData } = await supabase.from('household_members').select('household_id').eq('user_id', user?.id).single();
       if (memberData) {
         const { data: members } = await supabase.from('household_members').select(`user_id, users(name, email)`).eq('household_id', memberData.household_id);
@@ -51,18 +68,31 @@ export default function WalletDashboard() {
       }
     }
     loadData();
-  }, [expenseModal, debtModal, payDebtModal, bankModal]);
+  }, [expenseModal, incomeModal, debtModal, payDebtModal, bankModal, budgetModal]);
 
   const totalBalance = bankAccounts.reduce((acc, b) => acc + Number(b.balance), 0);
   const totalDebt = debts.reduce((acc, d) => acc + (Number(d.total_amount) - Number(d.paid_amount)), 0);
 
+  const currentMonth = new Date().getMonth() + 1;
+  const currentYear = new Date().getFullYear();
+  
+  const incomesThisMonth = incomes.filter(i => {
+    const d = new Date(i.date || i.created_at);
+    return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+  }).reduce((acc, i) => acc + Number(i.amount), 0);
+
+  const expensesThisMonth = expenses.filter(e => {
+    const d = new Date(e.date || e.created_at);
+    return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+  }).reduce((acc, e) => acc + Number(e.amount), 0);
+
   // Helper icons for categories
   const getCategoryIcon = (cat: string) => {
     switch(cat) {
-      case 'Comida': return <ShoppingBag size={18} />;
-      case 'Hogar': return <HomeIcon size={18} />;
+      case 'Supermercado': return <ShoppingBag size={18} />;
+      case 'Arriendo': case 'Luz': case 'Agua caliente': case 'Agua Fria': return <HomeIcon size={18} />;
       case 'Transporte': return <Car size={18} />;
-      case 'Ocio': return <Coffee size={18} />;
+      case 'Citas': case 'Gastos individuales': case 'Cumpleaños': return <Coffee size={18} />;
       default: return <Receipt size={18} />;
     }
   }
@@ -72,6 +102,22 @@ export default function WalletDashboard() {
       const res = await addExpenseAction(formData);
       if (res?.error) return alert(res.error);
       setExpenseModal(false);
+    } catch (e: any) { alert(e.message) }
+  }
+
+  async function handleAddIncome(formData: FormData) {
+    try {
+      const res = await addIncomeAction(formData);
+      if (res?.error) return alert(res.error);
+      setIncomeModal(false);
+    } catch (e: any) { alert(e.message) }
+  }
+
+  async function handleCreateBudget(formData: FormData) {
+    try {
+      const res = await createBudgetAction(formData);
+      if (res?.error) return alert(res.error);
+      setBudgetModal(false);
     } catch (e: any) { alert(e.message) }
   }
 
@@ -99,6 +145,12 @@ export default function WalletDashboard() {
     } catch (e: any) { alert(e.message) }
   }
 
+  // Combine incomes and expenses for "Movimientos" list
+  const allMoves = [
+    ...incomes.map(i => ({ ...i, isIncome: true, _date: new Date(i.date || i.created_at) })),
+    ...expenses.map(e => ({ ...e, isIncome: false, _date: new Date(e.date || e.created_at) }))
+  ].sort((a, b) => b._date.getTime() - a._date.getTime());
+
   return (
     <main className="min-h-screen pb-24 bg-[#09090b]">
       
@@ -110,17 +162,32 @@ export default function WalletDashboard() {
             <h1 className="text-4xl font-bold tracking-tight text-white mt-1">${totalBalance.toLocaleString()}</h1>
           </div>
           <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold text-indigo-300">
-            {currentUser?.email?.charAt(0).toUpperCase()}
+            {currentUser?.email?.charAt(0).toUpperCase() || 'U'}
           </div>
         </header>
       </div>
 
       <div className="p-6 space-y-8">
         
-        {/* VISTA: BILLETERA */}
-        {activeTab === 'billetera' && (
+        {/* VISTA: GENERAL */}
+        {activeTab === 'general' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="glass-panel p-4 rounded-2xl border border-white/5">
+                <div className="flex items-center gap-2 text-green-400 mb-2">
+                  <TrendingUp size={16} /> <span className="text-xs font-medium">Ingresos Mes</span>
+                </div>
+                <p className="text-xl font-bold text-white">${incomesThisMonth.toLocaleString()}</p>
+              </div>
+              <div className="glass-panel p-4 rounded-2xl border border-white/5">
+                <div className="flex items-center gap-2 text-red-400 mb-2">
+                  <TrendingDown size={16} /> <span className="text-xs font-medium">Gastos Mes</span>
+                </div>
+                <p className="text-xl font-bold text-white">${expensesThisMonth.toLocaleString()}</p>
+              </div>
+            </div>
+
             {/* Tarjetas Bancarias */}
             <div className="flex justify-between items-end mb-4">
               <h2 className="text-lg font-semibold text-white">Cuentas y Tarjetas</h2>
@@ -158,36 +225,94 @@ export default function WalletDashboard() {
 
             {/* Acciones Rápidas */}
             <div className="grid grid-cols-2 gap-4 my-6">
+              <button onClick={() => setIncomeModal(true)} className="glass-panel p-4 rounded-2xl flex flex-col items-center gap-3 hover:bg-green-500/10 transition-colors border border-white/5">
+                <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-400"><TrendingUp size={20} /></div>
+                <span className="text-sm font-medium text-zinc-300">Añadir Ingreso</span>
+              </button>
               <button onClick={() => setExpenseModal(true)} className="glass-panel p-4 rounded-2xl flex flex-col items-center gap-3 hover:bg-indigo-500/10 transition-colors border border-white/5">
                 <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400"><TrendingDown size={20} /></div>
                 <span className="text-sm font-medium text-zinc-300">Nuevo Gasto</span>
               </button>
-              <button className="glass-panel p-4 rounded-2xl flex flex-col items-center gap-3 hover:bg-blue-500/10 transition-colors border border-white/5">
-                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400"><ArrowRightLeft size={20} /></div>
-                <span className="text-sm font-medium text-zinc-300">Transferir</span>
+            </div>
+          </div>
+        )}
+
+        {/* VISTA: PRESUPUESTOS */}
+        {activeTab === 'presupuestos' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-semibold text-white">Presupuestos del Mes</h2>
+              <button onClick={() => setBudgetModal(true)} className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500/30 transition-colors">
+                <Plus size={18} />
               </button>
             </div>
 
-            {/* Historial de Movimientos */}
-            <h2 className="text-lg font-semibold text-white mb-4">Últimos Movimientos</h2>
+            <div className="space-y-4">
+              {budgets.length === 0 ? (
+                <div className="text-center p-8 glass-panel rounded-2xl border-dashed">
+                  <p className="text-zinc-500 text-sm">No has configurado presupuestos para este mes.</p>
+                </div>
+              ) : (
+                budgets.map(b => {
+                  const progress = Math.min((b.spent_amount / b.allocated_amount) * 100, 100);
+                  const isOver = b.spent_amount > b.allocated_amount;
+                  
+                  return (
+                    <div key={b.id} className="glass-panel p-5 rounded-2xl border border-white/5 relative overflow-hidden">
+                      <div className="relative z-10 flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-zinc-400">
+                            {getCategoryIcon(b.category)}
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-white">{b.category}</h3>
+                            <p className="text-xs text-zinc-400 mt-0.5">Asignado: ${Number(b.allocated_amount).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="relative z-10">
+                        <div className="flex justify-between text-[10px] text-zinc-400 mb-1 font-medium">
+                          <span className={isOver ? 'text-red-400' : ''}>${Number(b.spent_amount).toLocaleString()} gastado</span>
+                          <span>{progress.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-1000 ${isOver ? 'bg-red-500' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* VISTA: MOVIMIENTOS */}
+        {activeTab === 'movimientos' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h2 className="text-lg font-semibold text-white mb-4">Historial de Movimientos</h2>
             <div className="space-y-3">
-              {expenses.length === 0 ? (
+              {allMoves.length === 0 ? (
                 <p className="text-center text-zinc-500 text-sm py-8 glass-panel rounded-2xl">Aún no hay movimientos registrados.</p>
               ) : (
-                expenses.map(e => (
-                  <div key={e.id} className="flex items-center justify-between p-4 glass-panel rounded-2xl border border-white/5">
+                allMoves.map(m => (
+                  <div key={m.id} className="flex items-center justify-between p-4 glass-panel rounded-2xl border border-white/5">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-zinc-400">
-                        {getCategoryIcon(e.category)}
+                        {m.isIncome ? <TrendingUp size={18} className="text-green-400" /> : getCategoryIcon(m.category)}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-white">{e.description}</p>
-                        <p className="text-[11px] text-zinc-500">{e.category} • {e.split_type === '50/50' ? 'Compartido' : 'Personal'}</p>
+                        <p className="text-sm font-medium text-white">{m.description}</p>
+                        <p className="text-[11px] text-zinc-500">
+                          {m.isIncome ? 'Ingreso' : `${m.category} • ${m.split_type === '50/50' ? 'Compartido' : 'Personal'}`}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-white">-${e.amount.toLocaleString()}</p>
-                      <p className="text-[11px] text-zinc-500">{new Date(e.created_at).toLocaleDateString()}</p>
+                      <p className={`text-sm font-bold ${m.isIncome ? 'text-green-400' : 'text-white'}`}>
+                        {m.isIncome ? '+' : '-'}${m.amount.toLocaleString()}
+                      </p>
+                      <p className="text-[11px] text-zinc-500">{new Date(m._date).toLocaleDateString()}</p>
                     </div>
                   </div>
                 ))
@@ -201,8 +326,8 @@ export default function WalletDashboard() {
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-lg font-semibold text-white">Deudas Activas</h2>
-                <p className="text-sm text-red-400 font-medium">Deuda Total: ${totalDebt.toLocaleString()}</p>
+                <h2 className="text-lg font-semibold text-white">Deudas Activas y Cuotas</h2>
+                <p className="text-sm text-red-400 font-medium">Total: ${totalDebt.toLocaleString()}</p>
               </div>
               <button onClick={() => setDebtModal(true)} className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">
                 <Plus size={18} />
@@ -310,17 +435,21 @@ export default function WalletDashboard() {
       {/* BOTTOM NAVIGATION BAR */}
       <nav className="fixed bottom-0 left-0 w-full bg-[#09090b]/80 backdrop-blur-xl border-t border-white/5 pb-safe z-40">
         <div className="flex justify-around items-center px-6 py-4 max-w-md mx-auto">
-          <button onClick={() => setActiveTab('billetera')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'billetera' ? 'text-indigo-400' : 'text-zinc-500'}`}>
-            <Wallet size={24} />
-            <span className="text-[10px] font-medium">Billetera</span>
+          <button onClick={() => setActiveTab('general')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'general' ? 'text-indigo-400' : 'text-zinc-500'}`}>
+            <LayoutDashboard size={24} />
+            <span className="text-[10px] font-medium">General</span>
+          </button>
+          <button onClick={() => setActiveTab('presupuestos')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'presupuestos' ? 'text-indigo-400' : 'text-zinc-500'}`}>
+            <PieChart size={24} />
+            <span className="text-[10px] font-medium">Presupuestos</span>
+          </button>
+          <button onClick={() => setActiveTab('movimientos')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'movimientos' ? 'text-indigo-400' : 'text-zinc-500'}`}>
+            <ArrowRightLeft size={24} />
+            <span className="text-[10px] font-medium">Movimientos</span>
           </button>
           <button onClick={() => setActiveTab('deudas')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'deudas' ? 'text-indigo-400' : 'text-zinc-500'}`}>
             <CreditCard size={24} />
             <span className="text-[10px] font-medium">Deudas</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 text-zinc-700 cursor-not-allowed">
-            <PiggyBank size={24} />
-            <span className="text-[10px] font-medium">Ahorros</span>
           </button>
           <button onClick={() => setActiveTab('ajustes')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'ajustes' ? 'text-indigo-400' : 'text-zinc-500'}`}>
             <Settings size={24} />
@@ -337,22 +466,60 @@ export default function WalletDashboard() {
               <h2 className="text-xl font-bold">Agregar Cuenta Bancaria</h2>
               <button onClick={() => setBankModal(false)} className="text-zinc-400"><X size={20} /></button>
             </div>
-            
             <form action={handleCreateBank} className="space-y-4">
               <input name="name" type="text" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none" placeholder="Nombre (ej. Banco Falabella)" />
               <input name="balance" type="number" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none" placeholder="Saldo Actual ($)" />
-              <p className="text-xs text-zinc-500">Ingresa tu saldo real actual para que la aplicación comience a cuadrar matemáticamente desde este monto.</p>
               <button type="submit" className="w-full bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-xl py-3.5 font-medium mt-4">Guardar Cuenta</button>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODALES ANTERIORES (Gasto, Deuda, Pago Deuda) - Omitidos visualmente en este bloque por espacio pero los reinserto abajo */}
-      
-      {expenseModal && (
+      {/* MODAL: INGRESO */}
+      {incomeModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-[#18181b] w-full max-w-md p-6 sm:rounded-3xl rounded-t-3xl border border-white/10 animate-in slide-in-from-bottom-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Añadir Ingreso</h2>
+              <button onClick={() => setIncomeModal(false)} className="text-zinc-400"><X size={20} /></button>
+            </div>
+            <form action={handleAddIncome} className="space-y-4">
+              <input name="amount" type="number" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none" placeholder="Monto ($)" />
+              <input name="description" type="text" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none" placeholder="Descripción (ej. Sueldo)" />
+              <select name="bank_account_id" className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none appearance-none">
+                <option value="">Selecciona Cuenta</option>
+                {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <button type="submit" className="w-full bg-green-600 hover:bg-green-500 text-white rounded-xl py-3.5 font-medium mt-4">Guardar Ingreso</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PRESUPUESTO */}
+      {budgetModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-[#18181b] w-full max-w-md p-6 sm:rounded-3xl rounded-t-3xl border border-white/10 animate-in slide-in-from-bottom-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Crear Presupuesto</h2>
+              <button onClick={() => setBudgetModal(false)} className="text-zinc-400"><X size={20} /></button>
+            </div>
+            <form action={handleCreateBudget} className="space-y-4">
+              <select name="category" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none appearance-none">
+                <option value="">Selecciona Categoría</option>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input name="allocated_amount" type="number" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none" placeholder="Monto Máximo Mensual ($)" />
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3.5 font-medium mt-4">Guardar Presupuesto</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GASTO */}
+      {expenseModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center p-0 sm:p-4 animate-in fade-in max-h-screen overflow-y-auto">
+          <div className="bg-[#18181b] w-full max-w-md p-6 sm:rounded-3xl rounded-t-3xl border border-white/10 animate-in slide-in-from-bottom-8 mt-10">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Registrar Gasto</h2>
               <button onClick={() => setExpenseModal(false)} className="text-zinc-400"><X size={20} /></button>
@@ -360,23 +527,40 @@ export default function WalletDashboard() {
             <form action={handleAddExpense} className="space-y-4">
               <input name="amount" type="number" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none" placeholder="Monto ($)" />
               <input name="description" type="text" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none" placeholder="Descripción (ej. Supermercado)" />
+              
               <div className="grid grid-cols-2 gap-3">
                 <select name="category" className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none appearance-none">
-                  <option value="Comida">Comida</option><option value="Hogar">Hogar</option><option value="Transporte">Transporte</option><option value="Ocio">Ocio</option>
+                  <option value="">Categoría</option>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select name="split_type" className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none appearance-none">
-                  <option value="50/50">Compartido (50/50)</option><option value="100%_personal">100% Personal</option>
+                  <option value="50/50">Compartido</option><option value="100%_personal">Personal</option>
                 </select>
               </div>
+
               <select name="bank_account_id" className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none appearance-none">
-                {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.name} (${b.balance})</option>)}
+                <option value="">Cuenta de cobro</option>
+                {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
+
+              <select name="budget_id" className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-indigo-500 outline-none appearance-none">
+                <option value="">Vincular a Presupuesto (Opcional)</option>
+                {budgets.map(b => <option key={b.id} value={b.id}>{b.category}</option>)}
+              </select>
+
+              <div className="flex items-center gap-3 bg-black/20 p-3 rounded-xl border border-white/10">
+                <input type="checkbox" name="is_installment" id="is_installment" className="w-4 h-4 accent-indigo-500" />
+                <label htmlFor="is_installment" className="text-sm text-zinc-300 flex-1">Es compra en cuotas</label>
+                <input name="installment_total" type="number" className="w-20 bg-black/30 border border-white/5 rounded-lg px-2 py-1 text-white text-sm focus:border-indigo-500 outline-none" placeholder="Cuotas" />
+              </div>
+
               <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3.5 font-medium mt-4">Guardar Gasto</button>
             </form>
           </div>
         </div>
       )}
 
+      {/* MODAL: DEUDA (MANUAL) */}
       {debtModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-[#18181b] w-full max-w-md p-6 sm:rounded-3xl rounded-t-3xl border border-white/10 animate-in slide-in-from-bottom-8">
@@ -393,6 +577,7 @@ export default function WalletDashboard() {
         </div>
       )}
 
+      {/* MODAL: ABONO DEUDA */}
       {payDebtModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-[#18181b] w-full max-w-md p-6 sm:rounded-3xl rounded-t-3xl border border-white/10 animate-in slide-in-from-bottom-8">
@@ -404,7 +589,8 @@ export default function WalletDashboard() {
               <input type="hidden" name="debt_id" value={payDebtModal} />
               <input name="amount" type="number" required className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none" placeholder="Monto a abonar ($)" />
               <select name="bank_account_id" className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none appearance-none">
-                {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.name} (Saldo: ${b.balance})</option>)}
+                <option value="">Cuenta de cobro</option>
+                {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.name} (${b.balance})</option>)}
               </select>
               <button type="submit" className="w-full bg-green-600/90 hover:bg-green-500 text-white rounded-xl py-3.5 font-medium mt-4">Confirmar Pago</button>
             </form>
