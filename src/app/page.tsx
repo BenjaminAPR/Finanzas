@@ -68,23 +68,31 @@ export default function WalletDashboard() {
   }
 
   async function handleAddExpense(formData: FormData) {
-    await addExpenseAction(formData);
-    setExpenseModal(false);
+    try {
+      await addExpenseAction(formData);
+      setExpenseModal(false);
+    } catch (e: any) { alert(e.message) }
   }
 
   async function handleAddDebt(formData: FormData) {
-    await addDebtAction(formData);
-    setDebtModal(false);
+    try {
+      await addDebtAction(formData);
+      setDebtModal(false);
+    } catch (e: any) { alert(e.message) }
   }
 
   async function handlePayDebt(formData: FormData) {
-    await payDebtAction(formData);
-    setPayDebtModal(null);
+    try {
+      await payDebtAction(formData);
+      setPayDebtModal(null);
+    } catch (e: any) { alert(e.message) }
   }
 
   async function handleCreateBank(formData: FormData) {
-    await createBankAccountAction(formData);
-    setBankModal(false);
+    try {
+      await createBankAccountAction(formData);
+      setBankModal(false);
+    } catch (e: any) { alert(e.message) }
   }
 
   return (

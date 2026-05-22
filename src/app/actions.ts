@@ -132,7 +132,10 @@ export async function createBankAccountAction(formData: FormData) {
     user_id: user.id
   })
 
-  if (error) throw new Error("Error creando cuenta bancaria")
+  if (error) {
+    console.error(error);
+    throw new Error(`Supabase Error: ${error.message} (Code: ${error.code})`)
+  }
   revalidatePath('/', 'page')
   return { success: true }
 }
