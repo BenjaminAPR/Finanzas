@@ -19,7 +19,7 @@ export async function addExpenseAction(formData: FormData) {
   const is_installment = formData.get('is_installment') === 'on' || formData.get('is_installment') === 'true'
   const installment_total = parseInt(formData.get('installment_total') as string) || null
 
-  const household_id = await getOrCreateHousehold(supabase, user.id, user.email || 'Usuario');
+  const household_id = await getOrCreateHousehold(user.id, user.email || 'Usuario');
   if (!household_id) return { error: "No se pudo generar tu espacio de trabajo." }
 
   if (is_installment && installment_total && installment_total > 1) {
@@ -94,7 +94,7 @@ export async function addIncomeAction(formData: FormData) {
   const description = formData.get('description') as string
   const bank_account_id = formData.get('bank_account_id') as string
 
-  const household_id = await getOrCreateHousehold(supabase, user.id, user.email || 'Usuario');
+  const household_id = await getOrCreateHousehold(user.id, user.email || 'Usuario');
   if (!household_id) return { error: "No se pudo generar tu espacio de trabajo." }
 
   const { error } = await supabase.from('incomes').insert({
@@ -128,7 +128,7 @@ export async function createBudgetAction(formData: FormData) {
   const month = new Date().getMonth() + 1
   const year = new Date().getFullYear()
 
-  const household_id = await getOrCreateHousehold(supabase, user.id, user.email || 'Usuario');
+  const household_id = await getOrCreateHousehold(user.id, user.email || 'Usuario');
   if (!household_id) return { error: "No se pudo generar tu espacio de trabajo." }
 
   // Check if budget already exists for this category/month/year to avoid duplicates
@@ -166,7 +166,7 @@ export async function addDebtAction(formData: FormData) {
   const name = formData.get('name') as string
   const total_amount = parseFloat(formData.get('total_amount') as string)
 
-  const household_id = await getOrCreateHousehold(supabase, user.id, user.email || 'Usuario');
+  const household_id = await getOrCreateHousehold(user.id, user.email || 'Usuario');
   if (!household_id) return { error: "No se pudo generar tu espacio de trabajo." }
 
   const { error } = await supabase.from('debts').insert({
@@ -223,7 +223,7 @@ export async function createBankAccountAction(formData: FormData) {
   const name = formData.get('name') as string
   const balance = parseFloat(formData.get('balance') as string)
 
-  const household_id = await getOrCreateHousehold(supabase, user.id, user.email || 'Usuario');
+  const household_id = await getOrCreateHousehold(user.id, user.email || 'Usuario');
   if (!household_id) return { error: "No se pudo generar tu espacio de trabajo." }
 
   const { error } = await supabase.from('bank_accounts').insert({
@@ -241,9 +241,20 @@ export async function createBankAccountAction(formData: FormData) {
   return { success: true }
 }
 
-async function getOrCreateHousehold(supabase: any, userId: string, userEmail: string) {
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+
+function getAdminClient() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  )
+}
+
+async function getOrCreateHousehold(userId: string, userEmail: string) {
+  const adminClient = getAdminClient();
+  
   // Check if member exists
-  const { data: member } = await supabase
+  const { data: member } = await adminClient
     .from('household_members')
     .select('household_id')
     .eq('user_id', userId)
@@ -252,18 +263,56 @@ async function getOrCreateHousehold(supabase: any, userId: string, userEmail: st
   if (member?.household_id) return member.household_id;
 
   // Auto-create household for simplicity
-  const { data: newHousehold } = await supabase
+  const { data: newHousehold } = await adminClient
     .from('households')
     .insert({ name: `Familia de ${userEmail.split('@')[0]}` })
     .select('id')
     .single();
 
   if (newHousehold?.id) {
-    await supabase.from('household_members').insert({
+    await adminClient.from('household_members').insert({
       user_id: userId,
       household_id: newHousehold.id
     });
     return newHousehold.id;
   }
   return null;
+}
+
+export async function fetchDashboardDataAction() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "No autorizado" };
+
+  const adminClient = getAdminClient();
+  const household_id = await getOrCreateHousehold(user.id, user.email || 'Usuario');
+  if (!household_id) return { error: "No se pudo generar tu espacio de trabajo." };
+
+  const [
+    { data: bankAccounts },
+    { data: debts },
+    { data: expenses },
+    { data: incomes },
+    { data: budgets },
+    { data: householdMembers }
+  ] = await Promise.all([
+    adminClient.from('bank_accounts').select('*').eq('household_id', household_id),
+    adminClient.from('debts').select('*').eq('household_id', household_id),
+    adminClient.from('expenses').select('*').eq('household_id', household_id).order('created_at', { ascending: false }).limit(20),
+    adminClient.from('incomes').select('*').eq('household_id', household_id).order('created_at', { ascending: false }).limit(20),
+    adminClient.from('budgets').select('*').eq('household_id', household_id),
+    adminClient.from('household_members').select('user_id, users(name, email)').eq('household_id', household_id)
+  ]);
+
+  return {
+    success: true,
+    data: {
+      bankAccounts: bankAccounts || [],
+      debts: debts || [],
+      expenses: expenses || [],
+      incomes: incomes || [],
+      budgets: budgets || [],
+      householdMembers: householdMembers || []
+    }
+  };
 }

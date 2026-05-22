@@ -9,7 +9,7 @@ import {
   TrendingDown, TrendingUp, PieChart, LayoutDashboard
 } from 'lucide-react';
 import { logout } from './login/actions';
-import { addExpenseAction, addDebtAction, payDebtAction, createBankAccountAction, addIncomeAction, createBudgetAction } from './actions';
+import { addExpenseAction, addDebtAction, payDebtAction, createBankAccountAction, addIncomeAction, createBudgetAction, fetchDashboardDataAction } from './actions';
 import { createClient } from '@/utils/supabase/client';
 
 const CATEGORIES = [
@@ -44,27 +44,14 @@ export default function WalletDashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
       
-      const { data: banks } = await supabase.from('bank_accounts').select('*');
-      if (banks) setBankAccounts(banks);
-
-      const { data: dbDebts } = await supabase.from('debts').select('*');
-      if (dbDebts) setDebts(dbDebts);
-
-      const { data: exp } = await supabase.from('expenses').select('*').order('created_at', { ascending: false }).limit(20);
-      if (exp) setExpenses(exp);
-
-      const { data: inc } = await supabase.from('incomes').select('*').order('created_at', { ascending: false }).limit(20);
-      if (inc) setIncomes(inc);
-
-      const month = new Date().getMonth() + 1;
-      const year = new Date().getFullYear();
-      const { data: bdgs } = await supabase.from('budgets').select('*').eq('month', month).eq('year', year);
-      if (bdgs) setBudgets(bdgs);
-
-      const { data: memberData } = await supabase.from('household_members').select('household_id').eq('user_id', user?.id).single();
-      if (memberData) {
-        const { data: members } = await supabase.from('household_members').select(`user_id, users(name, email)`).eq('household_id', memberData.household_id);
-        if (members) setHouseholdMembers(members);
+      const res = await fetchDashboardDataAction();
+      if (res.success && res.data) {
+        setBankAccounts(res.data.bankAccounts);
+        setDebts(res.data.debts);
+        setExpenses(res.data.expenses);
+        setIncomes(res.data.incomes);
+        setBudgets(res.data.budgets);
+        setHouseholdMembers(res.data.householdMembers);
       }
     }
     loadData();
